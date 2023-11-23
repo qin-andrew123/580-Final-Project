@@ -193,7 +193,8 @@ float _FlipY;
         
         // Graph Includes
         // GraphIncludes: <None>
-        
+int _SampleSize;
+float3 _Samples[256];
         // Graph Functions
         
 void Unity_SceneDepth_Raw_float(float4 UV, out float Out)
@@ -247,23 +248,31 @@ SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
     //we also need normal
     float3 NDCNormal = IN.ViewSpaceNormal;
     
-    int sampleCount = 64;
-    float radius = 1;//need to tweak this later
+    int sampleCount = _SampleSize;
+    float radius = 0.04;//need to tweak this later
     
+    float occlusion = 0;
     for (int i = 0; i < sampleCount; i++)
     {
-        //ssao, sample a random point
-        float curX, curY, curZ;
-        Unity_RandomRange_float(float2(i,NDCPos.x), 0, 1, curX);
-        Unity_RandomRange_float(float2(i, NDCPos.x), 0, 1, curY);
-        Unity_RandomRange_float(float2(i, NDCPos.x), 0, 1, curX);
+        //for each sample, evaluate its location in NDC
+        float3 curSample = _Samples[i];
+        curSample = radius * curSample;
         
-        float3 curSample = float3(curX, curY, curZ);
-
+        float2 offsetUV = curSample.xy + NDCPos;
+        float offsetDepth = curSample.z + SceneDepth;
+        
+        float actualDepth;
+        Unity_SceneDepth_Raw_float(float4(offsetUV, 0, 0), actualDepth);
+        
+        if (actualDepth >= offsetDepth)
+        {
+            //this means the sample point is occluded
+            occlusion += 1;
+        }
     }
+    occlusion = occlusion / ((float) sampleCount);
     
-    
-    surface.BaseColor = NDCNormal;
+    surface.BaseColor = occlusion / 3 ;//need to tweak this later
     surface.Alpha = 1;
     return surface;
 }
