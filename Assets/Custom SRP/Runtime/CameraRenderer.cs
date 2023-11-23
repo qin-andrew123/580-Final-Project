@@ -13,6 +13,16 @@ public class CameraRenderer
     CommandBuffer buffer = new CommandBuffer { name = bufferName };
     CullingResults cullingResults;
 
+    //legacy
+    static ShaderTagId[] legacyShaderTagIds = {
+        new ShaderTagId("Always"),
+        new ShaderTagId("ForwardBase"),
+        new ShaderTagId("PrepassBase"),
+        new ShaderTagId("Vertex"),
+        new ShaderTagId("VertexLMRGBM"),
+        new ShaderTagId("VertexLM")
+    };
+
     public void Render(ScriptableRenderContext context, Camera camera)
     {
         this.context = context;
@@ -23,6 +33,7 @@ public class CameraRenderer
         }
         Setup();
         DrawVisibleGeometry();
+        DrawUnsupportedShaders();
         Submit();
     }
 
@@ -45,6 +56,22 @@ public class CameraRenderer
         drawingSettings.sortingSettings = sortingSettings;
         filteringSettings.renderQueueRange = RenderQueueRange.transparent;
 
+        context.DrawRenderers(
+            cullingResults, ref drawingSettings, ref filteringSettings
+        );
+    }
+    void DrawUnsupportedShaders()
+    {
+        var drawingSettings = new DrawingSettings(
+            legacyShaderTagIds[0], new SortingSettings(camera)
+        );
+
+        for (int i = 1; i < legacyShaderTagIds.Length; i++)
+        {
+            drawingSettings.SetShaderPassName(i, legacyShaderTagIds[i]);
+        }//multi-pass
+
+        var filteringSettings = FilteringSettings.defaultValue;
         context.DrawRenderers(
             cullingResults, ref drawingSettings, ref filteringSettings
         );
