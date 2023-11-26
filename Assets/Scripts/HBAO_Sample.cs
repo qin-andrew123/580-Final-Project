@@ -5,7 +5,7 @@ using UnityEngine;
 using UnityEngine.Profiling;
 
 [ExecuteInEditMode]
-public class PostProcessing : MonoBehaviour
+public class HBAO_Sample : MonoBehaviour
 {
     // A Material with the Unity shader you want to process the image with
     [Header("SSAO Material")]
@@ -16,6 +16,8 @@ public class PostProcessing : MonoBehaviour
     public bool showSSAO;
     public float radius;
     public float intensity;
+
+    [Header("Sampling Settings")]
     public bool regenerate;
 
     public static int sampleSize = 64;
