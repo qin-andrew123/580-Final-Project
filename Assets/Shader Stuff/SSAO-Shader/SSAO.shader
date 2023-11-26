@@ -195,6 +195,10 @@ float _FlipY;
         // GraphIncludes: <None>
 int _SampleSize;
 float3 _Samples[256];
+
+float _Radius;
+float _Intensity;
+int _ShowSSAO;
         // Graph Functions
         
 void Unity_SceneDepth_Raw_float(float4 UV, out float Out)
@@ -249,17 +253,26 @@ SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
     float3 NDCNormal = IN.ViewSpaceNormal;
     
     int sampleCount = _SampleSize;
-    float radius = 0.04;//need to tweak this later
+    float radius = _Radius; //0.04;//need to tweak this later
+    
+    //rotate the hemi samples
+    float3 randomVec = float3(1, 1, 0);//(OPTIONAL) randomize this later
+    float3 axis1 = normalize(randomVec - NDCNormal * dot(randomVec, NDCNormal));
+    float3 axis2 = normalize(cross(NDCNormal, axis1));
+    float3x3 mat = float3x3(axis1, axis2, NDCNormal);
     
     float occlusion = 0;
     for (int i = 0; i < sampleCount; i++)
     {
         //for each sample, evaluate its location in NDC
-        float3 curSample = _Samples[i];
-        curSample = radius * curSample;
+        float3 tagentSample = _Samples[i];
         
-        float2 offsetUV = curSample.xy + NDCPos;
-        float offsetDepth = curSample.z + SceneDepth;
+        //transform from tangent to NDC
+        float3 transformedSample = mul(mat, tagentSample);
+        float3 NDCSample = radius * tagentSample;
+        
+        float2 offsetUV = NDCSample.xy + NDCPos;
+        float offsetDepth = NDCSample.z + SceneDepth;
         
         float actualDepth;
         Unity_SceneDepth_Raw_float(float4(offsetUV, 0, 0), actualDepth);
@@ -267,12 +280,17 @@ SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
         if (actualDepth >= offsetDepth)
         {
             //this means the sample point is occluded
-            occlusion += 1;
+            //range check to avoid large contribution due to large depth diff
+            float depthDiff = abs(actualDepth - offsetDepth);
+            float rangeCheck = smoothstep(0.0, 1.0, radius / depthDiff);
+            occlusion += rangeCheck * _Intensity;
         }
     }
     occlusion = occlusion / ((float) sampleCount);
     
-    surface.BaseColor = occlusion / 3 ;//need to tweak this later
+    surface.BaseColor = SceneColor;
+    if (_ShowSSAO > 0)
+        surface.BaseColor = (1 - occlusion); //need to tweak this later
     surface.Alpha = 1;
     return surface;
 }

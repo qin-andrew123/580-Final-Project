@@ -241,7 +241,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   mat: {fileID: 2100000, guid: f003ac689213310479eb0c0ed73c3957, type: 2}
-  Color: {x: 1, y: 0, z: 0}
+  showSSAO: 1
+  radius: 0.01
+  intensity: 2
+  regenerate: 0
 --- !u!1 &1361360671
 GameObject:
   m_ObjectHideFlags: 0
