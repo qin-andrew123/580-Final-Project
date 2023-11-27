@@ -252,45 +252,61 @@ SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
     //we also need normal
     float3 NDCNormal = IN.ViewSpaceNormal;
     
-    int sampleCount = _SampleSize;
-    float radius = _Radius; //0.04;//need to tweak this later
+    float radius = _Radius; 
+    float radiusPixel = floor(radius * _ScreenParams.x);
+    float2 InvRes = float2(1.0 / _ScreenParams.x, 1.0 / _ScreenParams.y);
     
-    //rotate the hemi samples
-    float3 randomVec = float3(1, 1, 0);//(OPTIONAL) randomize this later
-    float3 axis1 = normalize(randomVec - NDCNormal * dot(randomVec, NDCNormal));
-    float3 axis2 = normalize(cross(NDCNormal, axis1));
-    float3x3 mat = float3x3(axis1, axis2, NDCNormal);
+    //sample count for theta and stepcount
+    int sampleCount = _SampleSize;
+    int stepCount = min(4, radiusPixel);
+    
+    //stepSize
+    float stepSizePixel = radiusPixel / (stepCount + 1);
+    float2 stepSize = stepSizePixel * InvRes;
     
     float occlusion = 0;
+    
+    float3 P = float3(NDCPos, SceneDepth);//P as the point we are evaluating
     for (int i = 0; i < sampleCount; i++)
     {
         //for each sample, evaluate its location in NDC
-        float3 tagentSample = _Samples[i];
+        float2 thetaSample = _Samples[i].xy;//direction
+        float2 directedStepSize = thetaSample * stepSize;
+        
+        float t_theta = acos(normalize(NDCNormal).z); //tagent angle
+        float h_theta = t_theta;
+        
+        for (int s = 1; s <= stepCount; s++)
+        {
+            float2 stepSample = NDCPos + s * directedStepSize;
+            float stepDepth;
+            
+            //obtain depth
+            Unity_SceneDepth_Raw_float(float4(stepSample.xy, 0, 0), stepDepth);
+            float3 Si = float3(stepSample, stepDepth);
+            float3 D = Si - P;
+            float DLength = length(D);
+            
+            float alphaSi = atan(-D.z / length(D.xy));//as in the paper
+            
+            if (DLength < radius && alphaSi > h_theta)
+            {
+                h_theta = alphaSi;
+                
+                float omega_theta = max(0, (1 - (D * D) / (radius * radius)));
+                
+                occlusion += omega_theta * (sin(h_theta) - sin(t_theta));
+            }
+
+        }
         
         //transform from tangent to NDC
-        float3 transformedSample = mul(mat, tagentSample);
-        float3 NDCSample = radius * tagentSample;
-        
-        float2 offsetUV = NDCSample.xy + NDCPos;
-        float offsetDepth = NDCSample.z + SceneDepth;
-        
-        float actualDepth;
-        Unity_SceneDepth_Raw_float(float4(offsetUV, 0, 0), actualDepth);
-        
-        if (actualDepth >= offsetDepth)
-        {
-            //this means the sample point is occluded
-            //range check to avoid large contribution due to large depth diff
-            float depthDiff = abs(actualDepth - offsetDepth);
-            float rangeCheck = smoothstep(0.0, 1.0, radius / depthDiff);
-            occlusion += rangeCheck * _Intensity;
-        }
     }
-    occlusion = occlusion / ((float) sampleCount);
+    occlusion = occlusion / ((float) sampleCount) * _Intensity;
     
     surface.BaseColor = SceneColor;
     if (_ShowSSAO > 0)
-        surface.BaseColor = (1 - occlusion); //need to tweak this later
+        surface.BaseColor = (1 - occlusion) ; //need to tweak this later
     surface.Alpha = 1;
     return surface;
 }

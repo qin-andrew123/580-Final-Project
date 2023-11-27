@@ -25,7 +25,7 @@ public class HBAO_Sample : MonoBehaviour
     
     private void Update()
     {
-        CreateSamplesHemi();
+        CreateSamplesCircle();
 
         mat.SetInt("_ShowSSAO", showSSAO ? 1 : 0);
         mat.SetFloat("_Radius", radius);
@@ -35,7 +35,7 @@ public class HBAO_Sample : MonoBehaviour
         mat.SetVectorArray("_Samples", samples);
     }
 
-    private void CreateSamples() {
+    private void CreateSamplesCircle() {
         if (samples.Count == sampleSize && !regenerate)
         {
             Debug.Log("sample count is" + samples.Count);
@@ -45,34 +45,9 @@ public class HBAO_Sample : MonoBehaviour
         
         for (int i = 0; i < sampleSize; i++)
         {
-            Vector4 newPos = Random.insideUnitSphere;//a location is generated!
+            Vector4 newPos = Random.insideUnitCircle;//a location is generated!
             samples.Add(newPos);
-           
         }
     }
 
-    private void CreateSamplesHemi()
-    {
-        if (samples.Count == sampleSize && !regenerate)
-        {
-            Debug.Log("sample count is" + samples.Count);
-            return;
-        }
-        samples.Clear();//for now just generate new sample everyframe!
-
-        int counter = 0;
-        while (counter < sampleSize)
-        {
-            Vector4 newPos = Random.insideUnitSphere;//a location is generated!
-            if (newPos.z > 0)
-            {
-                float scale = (float)counter / (float)sampleSize;
-                scale = Mathf.Lerp(0.1f, 1.0f, scale * scale);
-                //a larger weight on occlusions close to the actual fragment.
-                newPos *= scale;
-                samples.Add(newPos);
-                counter++;
-            }
-        }
-    }
 }
