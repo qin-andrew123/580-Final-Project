@@ -289,8 +289,13 @@ SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
     occlusion = occlusion / ((float) sampleCount);
     
     surface.BaseColor = SceneColor;
-    if (_ShowSSAO > 0)
+    
+    
+    if (_ShowSSAO == 1)
         surface.BaseColor = (1 - occlusion); //need to tweak this later
+    else if (_ShowSSAO == 2)
+        surface.BaseColor *= (1 - occlusion);
+    
     surface.Alpha = 1;
     return surface;
 }

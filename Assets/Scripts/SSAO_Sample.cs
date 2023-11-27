@@ -12,7 +12,15 @@ public class SSAO_Sample : MonoBehaviour
     public Material mat;
     //public Vector3 Color;
     //public 
+   
+    public enum RenderMode
+    {
+      SSAO_Only,
+      SSAO_Additive,
+      Default
+    };
     [Header("Material Parameters")]
+    public RenderMode renderMode;
     public bool showSSAO;
     public float radius;
     public float intensity;
@@ -27,7 +35,13 @@ public class SSAO_Sample : MonoBehaviour
     {
         CreateSamplesHemi();
 
-        mat.SetInt("_ShowSSAO", showSSAO ? 1 : 0);
+        int mode = 0;
+        if(renderMode == RenderMode.SSAO_Only)
+            mode = 1;
+        else if (renderMode == RenderMode.SSAO_Additive)
+            mode = 2;
+
+        mat.SetInt("_ShowSSAO", mode);
         mat.SetFloat("_Radius", radius);
         mat.SetFloat("_Intensity", intensity);
 
