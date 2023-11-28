@@ -107,6 +107,7 @@ struct SurfaceDescriptionInputs
     
     float3 ViewSpaceNormal;
     float3 WorldSpaceNormal;
+    float3 CameraSpaceNormal;
 };
 struct Varyings
 {
@@ -203,7 +204,10 @@ int _ShowSSAO;
         
 void Unity_SceneDepth_Raw_float(float4 UV, out float Out)
 {
-    Out = SHADERGRAPH_SAMPLE_SCENE_DEPTH(UV.xy);
+    
+    
+    Out = Linear01Depth(SHADERGRAPH_SAMPLE_SCENE_DEPTH(UV.xy), _ZBufferParams);
+    Out = SHADERGRAPH_SAMPLE_SCENE_DEPTH(UV.xy);   
 }
         
 TEXTURE2D_X(_BlitTexture);
@@ -221,6 +225,48 @@ void Unity_RandomRange_float(float2 Seed, float Min, float Max, out float Out)
     Out = lerp(Min, Max, randomno);
 }
 
+float3 TransformTagentToView(float3 tagent, float3 WorldSpaceNormal)
+{
+    float3 _TransformedView;
+    float3 world;
+        
+    float3 WorldSpaceTangent, WorldSpaceBiTangent;
+    
+    float4 tangentWS = float4(0, 1, 0, 0); // We can't access the tangent in screen space
+    // use bitangent on the fly like in hdrp
+    // IMPORTANT! If we ever support Flip on double sided materials ensure bitangent and tangent are NOT flipped.
+    float crossSign = (tangentWS.w > 0.0 ? 1.0 : -1.0) * GetOddNegativeScale();
+    float3 bitang = crossSign * cross(WorldSpaceNormal.xyz, tangentWS.xyz);
+            // to preserve mikktspace compliance we use same scale renormFactor as was used on the normal.
+            // This is explained in section 2.2 in "surface gradient based bump mapping framework"
+    WorldSpaceTangent = tangentWS.xyz;
+    WorldSpaceBiTangent = bitang;
+    
+    float3x3 tangentTransform = float3x3(WorldSpaceTangent, WorldSpaceBiTangent, WorldSpaceNormal);
+    world = TransformTangentToWorld(tagent, tangentTransform, false);
+   
+    _TransformedView = TransformWorldToViewNormal(world, true);
+    
+    return _TransformedView;
+}
+
+float3 TransformViewToClip(float3 viewVector)
+{
+    float3 _Transform_Vector3;
+    {
+        // Converting Direction from View to Screen via world space
+        float3 world;
+        world = TransformViewToWorldDir(viewVector.xyz, false);
+        float4 _Transform_Vector3_value = TransformWViewToHClip(viewVector.xyz);
+        float3 _Transform_Vector3_uv = _Transform_Vector3_value.xyz / _Transform_Vector3_value.w;
+#if UNITY_UV_STARTS_AT_TOP
+                _Transform_Vector3_uv.y = -_Transform_Vector3_uv.y;
+#endif
+        _Transform_Vector3_uv.xy = _Transform_Vector3_uv.xy * 0.5 + 0.5;
+        _Transform_Vector3 = _Transform_Vector3_uv;
+    }
+    return _Transform_Vector3;
+}
         // Custom interpolators pre vertex
         /* WARNING: $splice Could not find named fragment 'CustomInterpolatorPreVertex' */
         
@@ -250,26 +296,38 @@ SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
     float3 SceneColor = (_URPSampleBuffer_24a2de1bebb142cfbe527f3ae742484b_Output_2_Vector4.xyz);
     float2 NDCPos = IN.NDCPosition.xy;//NDC xy
     //we also need normal
-    float3 NDCNormal = IN.ViewSpaceNormal;
+    float3 ViewNormal = normalize(IN.ViewSpaceNormal);
     
     int sampleCount = _SampleSize;
     float radius = _Radius; //0.04;//need to tweak this later
     
     //rotate the hemi samples
-    float3 randomVec = float3(1, 1, 0);//(OPTIONAL) randomize this later
-    float3 axis1 = normalize(randomVec - NDCNormal * dot(randomVec, NDCNormal));
-    float3 axis2 = normalize(cross(NDCNormal, axis1));
-    float3x3 mat = float3x3(axis1, axis2, NDCNormal);
+    float3 randomVec = normalize(float3(1, 1, 0)); //(OPTIONAL) randomize this later
+    float3 axis1 = normalize(randomVec - ViewNormal * dot(randomVec, ViewNormal));
+    float3 axis2 = normalize(cross(ViewNormal, axis1));
+    float3x3 mat = float3x3(axis1, axis2, ViewNormal);
     
     float occlusion = 0;
+    float sampleSignCheck = 1;
     for (int i = 0; i < sampleCount; i++)
     {
         //for each sample, evaluate its location in NDC
         float3 tagentSample = _Samples[i];
         
-        //transform from tangent to NDC
+        if (tagentSample.z <= 0 || tagentSample.z >= 1)
+            sampleSignCheck *= 0;
+        
+        //transform from tangent to View
         float3 transformedSample = mul(mat, tagentSample);
-        float3 NDCSample = radius * tagentSample;
+        //TransformTagentToView(tagentSample, IN.WorldSpaceNormal);
+        //mul(mat, tagentSample);
+        //TransformTagentToView(tagentSample, IN.WorldSpaceNormal);
+        //mul(mat, tagentSample);
+        float3 ViewSampleOffset = radius * transformedSample;//we will migrate this far in view space
+        float3 ClipSampleOffset = TransformViewToClip(ViewSampleOffset);
+        
+        float3 NDCSample = ViewSampleOffset;
+        //radius * transformedSample;
         
         float2 offsetUV = NDCSample.xy + NDCPos;
         float offsetDepth = NDCSample.z + SceneDepth;
@@ -277,7 +335,7 @@ SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
         float actualDepth;
         Unity_SceneDepth_Raw_float(float4(offsetUV, 0, 0), actualDepth);
         
-        if (actualDepth >= offsetDepth)
+        if (actualDepth > offsetDepth)
         {
             //this means the sample point is occluded
             //range check to avoid large contribution due to large depth diff
@@ -290,12 +348,16 @@ SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
     
     surface.BaseColor = SceneColor;
     
-    
     if (_ShowSSAO == 1)
         surface.BaseColor = (1 - occlusion); //need to tweak this later
     else if (_ShowSSAO == 2)
         surface.BaseColor *= (1 - occlusion);
-    
+    else if (_ShowSSAO == 3)
+        surface.BaseColor = sampleSignCheck;
+    //NDCNormal;
+        //mul(mat, float3(0,0,1));
+    //TransformTagentToView(float(0,0,1), IN.WorldSpaceNormal);
+   
     surface.Alpha = 1;
     return surface;
 }

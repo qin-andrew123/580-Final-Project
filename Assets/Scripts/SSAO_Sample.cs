@@ -17,11 +17,11 @@ public class SSAO_Sample : MonoBehaviour
     {
       SSAO_Only,
       SSAO_Additive,
-      Default
+      Default,
+      Debug
     };
     [Header("Material Parameters")]
     public RenderMode renderMode;
-    public bool showSSAO;
     public float radius;
     public float intensity;
 
@@ -40,6 +40,8 @@ public class SSAO_Sample : MonoBehaviour
             mode = 1;
         else if (renderMode == RenderMode.SSAO_Additive)
             mode = 2;
+        else if (renderMode == RenderMode.Debug)
+            mode = 3;
 
         mat.SetInt("_ShowSSAO", mode);
         mat.SetFloat("_Radius", radius);
@@ -69,7 +71,7 @@ public class SSAO_Sample : MonoBehaviour
     {
         if (samples.Count == sampleSize && !regenerate)
         {
-            Debug.Log("sample count is" + samples.Count);
+           // Debug.Log("sample count is" + samples.Count);
             return;
         }
         samples.Clear();//for now just generate new sample everyframe!
@@ -83,8 +85,9 @@ public class SSAO_Sample : MonoBehaviour
                 float scale = (float)counter / (float)sampleSize;
                 scale = Mathf.Lerp(0.1f, 1.0f, scale * scale);
                 //a larger weight on occlusions close to the actual fragment.
-                newPos *= scale;
+                //newPos *= scale;
                 samples.Add(newPos);
+                print(newPos + " of length " + newPos.SqrMagnitude());
                 counter++;
             }
         }
