@@ -448,7 +448,6 @@ SurfaceDescription DevSSAO(SurfaceDescriptionInputs IN)
   
     float occlusion = 0;
     float sampleSignCheck = 1;
-    float debugZcount = 0;
     
     for (int i = 0; i < sampleCount; i++)
     {
@@ -476,21 +475,21 @@ SurfaceDescription DevSSAO(SurfaceDescriptionInputs IN)
         {
             float depthDiff = abs(SceneDepth - actualDepth);
             float rangeCheck = smoothstep(0.0, 1.0, radius / depthDiff);
-            occlusion = occlusion + rangeCheck * _Intensity;
+            float weight = 1.0 / (1.0 + length(float3(NDCSample.xy, depthDiff))) * _Intensity;
+            occlusion = occlusion + weight;
         }
     }
     occlusion = occlusion / ((float) sampleCount);
-    debugZcount = debugZcount / ((float) sampleCount);
     
     surface.BaseColor = SceneColor;
     surface.Alpha = 1;
     
     float3 debugColor = float3(1, 1, 1);
-    if (isCenterDebug)
+    /*if (isCenterDebug)
     {
         surface.BaseColor = float3(1, 1,1 );
         return surface;
-    }
+    }*/
     
     if (_ShowSSAO == 1)
         surface.BaseColor = (1 - occlusion) * debugColor; //need to tweak this later

@@ -818,8 +818,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   mat: {fileID: 2100000, guid: 88449a553b69ac54c93bf4339562199d, type: 2}
-  renderMode: 0
-  radius: 0.03
+  renderMode: 1
+  radius: 0.02
   intensity: 2
   regenerate: 0
   generateSimple: 0
