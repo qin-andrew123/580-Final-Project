@@ -27,13 +27,17 @@ public class SSAO_Sample : MonoBehaviour
 
     [Header("Sampling Settings")]
     public bool regenerate;
+    public bool generateSimple;
 
     public static int sampleSize = 64;
     private List<Vector4> samples = new List<Vector4>(sampleSize );
     
     private void Update()
     {
-        CreateSamplesHemi();
+        if(!generateSimple)
+            CreateSamplesHemi();
+        else
+            CreateSamples();
 
         int mode = 0;
         if(renderMode == RenderMode.SSAO_Only)
@@ -63,7 +67,7 @@ public class SSAO_Sample : MonoBehaviour
         {
             Vector4 newPos = Random.insideUnitSphere;//a location is generated!
             samples.Add(newPos);
-           
+            print(newPos + " of length " + newPos.SqrMagnitude());
         }
     }
 
@@ -80,7 +84,7 @@ public class SSAO_Sample : MonoBehaviour
         while (counter < sampleSize)
         {
             Vector4 newPos = Random.insideUnitSphere;//a location is generated!
-            if (newPos.z > 0)
+            if (newPos.y > 0)
             {
                 float scale = (float)counter / (float)sampleSize;
                 scale = Mathf.Lerp(0.1f, 1.0f, scale * scale);
