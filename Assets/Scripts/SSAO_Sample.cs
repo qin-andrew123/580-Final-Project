@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEditor.PackageManager.UI;
 using UnityEngine;
 using UnityEngine.Profiling;
+using static UnityEditor.Experimental.AssetDatabaseExperimental.AssetDatabaseCounters;
 
 [ExecuteInEditMode]
 public class SSAO_Sample : MonoBehaviour
@@ -27,13 +28,17 @@ public class SSAO_Sample : MonoBehaviour
 
     [Header("Sampling Settings")]
     public bool regenerate;
+    public bool generateSimple;
 
-    public static int sampleSize = 64;
+    public static int sampleSize = 256;
     private List<Vector4> samples = new List<Vector4>(sampleSize );
     
     private void Update()
     {
-        CreateSamplesHemi();
+      /*  if(!generateSimple)
+            CreateSamplesHemi();
+        else*/
+        CreateSamples();
 
         int mode = 0;
         if(renderMode == RenderMode.SSAO_Only)
@@ -49,6 +54,7 @@ public class SSAO_Sample : MonoBehaviour
 
         mat.SetInt("_SampleSize", sampleSize);
         mat.SetVectorArray("_Samples", samples);
+        mat.SetInt("_IsSimple", generateSimple ? 1 : 0);
     }
 
     private void CreateSamples() {
@@ -63,33 +69,14 @@ public class SSAO_Sample : MonoBehaviour
         {
             Vector4 newPos = Random.insideUnitSphere;//a location is generated!
             samples.Add(newPos);
-           
-        }
-    }
 
-    private void CreateSamplesHemi()
-    {
-        if (samples.Count == sampleSize && !regenerate)
-        {
-           // Debug.Log("sample count is" + samples.Count);
-            return;
-        }
-        samples.Clear();//for now just generate new sample everyframe!
+            //sample closer to center
+            float scale = (float)i / (float)sampleSize;
+            scale = Mathf.Lerp(0.1f, 1.0f, scale * scale);
+            //a larger weight on occlusions close to the actual fragment.
+            newPos *= scale;
 
-        int counter = 0;
-        while (counter < sampleSize)
-        {
-            Vector4 newPos = Random.insideUnitSphere;//a location is generated!
-            if (newPos.z > 0)
-            {
-                float scale = (float)counter / (float)sampleSize;
-                scale = Mathf.Lerp(0.1f, 1.0f, scale * scale);
-                //a larger weight on occlusions close to the actual fragment.
-                //newPos *= scale;
-                samples.Add(newPos);
-                print(newPos + " of length " + newPos.SqrMagnitude());
-                counter++;
-            }
+            print(newPos + " of length " + newPos.SqrMagnitude());
         }
     }
 }
