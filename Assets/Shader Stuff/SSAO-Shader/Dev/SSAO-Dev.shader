@@ -196,11 +196,13 @@ float _FlipY;
         // Graph Includes
         // GraphIncludes: <None>
 int _SampleSize;
-float3 _Samples[256];
+float3 _Samples[512];
 
 float _Radius;
 float _Intensity;
 int _ShowSSAO;
+
+int _IsSimple;
         // Graph Functions
         
 void Unity_SceneDepth_Raw_float(float4 UV, out float Out)
@@ -396,71 +398,60 @@ SurfaceDescription SimpleSSAO(SurfaceDescriptionInputs IN)
     return surface;
 }
 
-
-SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
+float3 normalFromDepth(float depth, float2 NDCPos)//screen space normal
 {
-    return SimpleSSAO(IN);
+    const float2 offset1 = float2(0.0, 0.001);
+    const float2 offset2 = float2(0.001, 0.0);
+  
+    float depth1, depth2;
+    Unity_SceneDepth_Raw_float(float4(NDCPos.xy + offset1, 0, 0), depth1);
+    Unity_SceneDepth_Raw_float(float4(NDCPos.xy + offset2, 0, 0), depth2);
+  
+    float3 p1 = float3(offset1, depth1 - depth);
+    float3 p2 = float3(offset2, depth2 - depth);
+  
+    float3 normal = cross(p1, p2);
+    normal.z = -normal.z;
+  
+    return normalize(normal);
 }
 
-SurfaceDescription SSAODev(SurfaceDescriptionInputs IN)
+SurfaceDescription DevSSAO(SurfaceDescriptionInputs IN)
 {
     SurfaceDescription surface = (SurfaceDescription) 0;
     
-    //generate scene color and depth
     float SceneDepth;
-    Unity_SceneDepth_Raw_float(float4(IN.NDCPosition.xy, 0, 0),SceneDepth);
-    float4 _URPSampleBuffer_24a2de1bebb142cfbe527f3ae742484b_Output_2_Vector4 = Unity_Universal_SampleBuffer_BlitSource_float(float4(IN.NDCPosition.xy, 0, 0).xy);
-    float3 SceneColor = (_URPSampleBuffer_24a2de1bebb142cfbe527f3ae742484b_Output_2_Vector4.xyz);
-    float2 NDCPos = IN.NDCPosition.xy;//NDC xy
-    //we also need normal
-    float3 ViewNormal = normalize(IN.ViewSpaceNormal);
+    Unity_SceneDepth_Raw_float(float4(IN.NDCPosition.xy, 0, 0), SceneDepth);
     
+    float3 SceneColor = Unity_Universal_SampleBuffer_BlitSource_float(float4(IN.NDCPosition.xy, 0, 0).xy);
+    
+    float2 NDCPos = IN.NDCPosition.xy; //NDC xy ,[0,1]
     int sampleCount = _SampleSize;
     float radius = _Radius; //0.04;//need to tweak this later
+    radius = radius * SceneDepth;
     
-    //rotate the hemi samples
-    float3 randomVec = normalize(float3(1, 1, 0)); //(OPTIONAL) randomize this later
-    float3 axis1 = normalize(randomVec - ViewNormal * dot(randomVec, ViewNormal));
-    float3 axis2 = normalize(cross(ViewNormal, axis1));
-    float3x3 mat = float3x3(axis1, axis2, ViewNormal);
+    float resRatio = _ScreenParams.x / _ScreenParams.y;
+    bool isCenterDebug = ((NDCPos.x) <= 0.5 + radius && (NDCPos.x) >= 0.5 - radius);
+    isCenterDebug = isCenterDebug && ((NDCPos.y) <= 0.5 + radius * resRatio && (NDCPos.y) >= 0.5 - radius * resRatio);
     
-    bool isCenterDebug = ((NDCPos.x) <= 0.5 && (NDCPos.x) >= 0.49);
-    isCenterDebug = isCenterDebug && ((NDCPos.y) <= 0.5 && (NDCPos.y) >= 0.5 - 0.01*_ScreenParams.x /_ScreenParams.y);
-    
-    //near and far plane
-    float NearToFar = _ProjectionParams.z - _ProjectionParams.y;//far - near
-    
+    float3 ViewNormal = normalize(IN.ViewSpaceNormal);
+    float3 NDCNormal = normalFromDepth(SceneDepth, NDCPos);
+  
     float occlusion = 0;
     float sampleSignCheck = 1;
     for (int i = 0; i < sampleCount; i++)
     {
         //for each sample, evaluate its location in NDC
-        float3 tagentSample = _Samples[i];//simple sample
+        float3 tagentSample = _Samples[i]; //simple sample, with positive z
         
-        //if (tagentSample.y < 0 )
-        //    sampleSignCheck = 0;
-        
-        //transform from tangent to View
-        /*float3 transformedSample = 
-        TransformTagentToView(tagentSample, IN.WorldSpaceNormal);
-        //TransformTagentToView(tagentSample, IN.WorldSpaceNormal);
-        //mul(mat, tagentSample);
-        
-        float3 ViewSampleOffset = radius * transformedSample; //we will migrate this far in view space
-        float3 ViewPos = TransformClipToView(NDCPos, SceneDepth);
-        
-        float3 ViewOffsetPos = ViewPos + ViewSampleOffset;
-        float3 ClipOffsetPos = TransformViewToClip(ViewOffsetPos);
-        */
-        
-        /*float3 NDCSample = ViewSampleOffset;
-        float2 offsetUV = ClipOffsetPos.xy;
-        float offsetDepth = ClipOffsetPos.z;*/
+        if (dot(tagentSample, NDCNormal) < 0)
+            tagentSample = -tagentSample;
         
         float3 NDCSample = tagentSample * radius;
+        //rescale by screen ratio
+        NDCSample.y = NDCSample.y * resRatio;
+        
         float2 offsetUV = NDCSample.xy + NDCPos;
-        //if (offsetUV.x > 0.5)
-        //    sampleSignCheck = 0;
         
         float offsetDepth = NDCSample.z + SceneDepth;
         offsetDepth = saturate(offsetDepth);
@@ -468,19 +459,11 @@ SurfaceDescription SSAODev(SurfaceDescriptionInputs IN)
         float actualDepth;
         Unity_SceneDepth_Raw_float(float4(offsetUV, 0, 0), actualDepth);
         
-        if (actualDepth > offsetDepth)
+        if (actualDepth > offsetDepth)//nearest is 1, farest is 0
         {
-            //this means the sample point is occluded
-            //range check to avoid large contribution due to large depth diff
             float depthDiff = abs(actualDepth - offsetDepth);
             float rangeCheck = smoothstep(0.0, 1.0, radius / depthDiff);
             occlusion = occlusion + rangeCheck * _Intensity;
-        }
-        
-        //debug
-        if (isCenterDebug)
-        {
-            
         }
     }
     occlusion = occlusion / ((float) sampleCount);
@@ -490,7 +473,7 @@ SurfaceDescription SSAODev(SurfaceDescriptionInputs IN)
     
     if (isCenterDebug)
     {
-        surface.BaseColor = 1;
+        surface.BaseColor = float3(1,0,0);
         return surface;
     }
     
@@ -499,7 +482,7 @@ SurfaceDescription SSAODev(SurfaceDescriptionInputs IN)
     else if (_ShowSSAO == 2)
         surface.BaseColor *= (1 - occlusion);
     else if (_ShowSSAO == 3)
-        surface.BaseColor = SceneDepth;
+        surface.BaseColor = NDCNormal;
         //TransformTagentToView(float3(0, 2, 1), IN.WorldSpaceNormal);
     //NDCNormal;
         //mul(mat, float3(0,0,1));
@@ -507,6 +490,15 @@ SurfaceDescription SSAODev(SurfaceDescriptionInputs IN)
    
     return surface;
 }
+SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
+{
+    if (_IsSimple)
+        return SimpleSSAO(IN);
+    else
+        return DevSSAO(IN);
+
+}
+
         
         // --------------------------------------------------
         // Build Graph Inputs
