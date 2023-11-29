@@ -370,7 +370,8 @@ SurfaceDescription SimpleSSAO(SurfaceDescriptionInputs IN)
         float actualDepth;
         Unity_SceneDepth_Raw_float(float4(offsetUV, 0, 0), actualDepth);
         
-        if (actualDepth > offsetDepth)//nearest is 1, farest is 0
+        float bias = 0.002;
+        if (actualDepth >= offsetDepth + bias)//nearest is 1, farest is 0
         {
             float depthDiff = abs(actualDepth - offsetDepth);
             float rangeCheck = smoothstep(0.0, 1.0, radius / depthDiff);
@@ -444,8 +445,8 @@ SurfaceDescription DevSSAO(SurfaceDescriptionInputs IN)
         //for each sample, evaluate its location in NDC
         float3 tagentSample = _Samples[i]; //simple sample, with positive z
         
-        if (dot(tagentSample, NDCNormal) < 0)
-            tagentSample = -tagentSample;
+        //if (dot(tagentSample, NDCNormal) < 0)
+        //    tagentSample = -tagentSample;
         
         float3 NDCSample = tagentSample * radius;
         //rescale by screen ratio
@@ -459,9 +460,10 @@ SurfaceDescription DevSSAO(SurfaceDescriptionInputs IN)
         float actualDepth;
         Unity_SceneDepth_Raw_float(float4(offsetUV, 0, 0), actualDepth);
         
-        if (actualDepth > offsetDepth)//nearest is 1, farest is 0
+        float bias = 0.002;
+        if (actualDepth >= offsetDepth + bias)//nearest is 1, farest is 0
         {
-            float depthDiff = abs(actualDepth - offsetDepth);
+            float depthDiff = abs(SceneDepth - actualDepth);
             float rangeCheck = smoothstep(0.0, 1.0, radius / depthDiff);
             occlusion = occlusion + rangeCheck * _Intensity;
         }
