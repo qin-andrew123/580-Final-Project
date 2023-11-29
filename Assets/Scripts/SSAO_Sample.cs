@@ -85,7 +85,7 @@ public class SSAO_Sample : MonoBehaviour
                 float scale = (float)counter / (float)sampleSize;
                 scale = Mathf.Lerp(0.1f, 1.0f, scale * scale);
                 //a larger weight on occlusions close to the actual fragment.
-                //newPos *= scale;
+                newPos *= scale;
                 samples.Add(newPos);
                 print(newPos + " of length " + newPos.SqrMagnitude());
                 counter++;
