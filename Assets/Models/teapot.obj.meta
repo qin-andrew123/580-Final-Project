@@ -3,7 +3,27 @@ guid: 014f0d5d87d948d42820ff9055fc8f47
 ModelImporter:
   serializedVersion: 22200
   internalIDToNameTable: []
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Mesh1_Teapot_ModelMat
+    second: {fileID: 2100000, guid: 2743fc29d315568459b2347bb41c754c, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Mesh2_Teapot_ModelMat
+    second: {fileID: 2100000, guid: 57191131fd5e7904eba802f1c7b2812c, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Mesh3_Teapot_ModelMat
+    second: {fileID: 2100000, guid: b354e775c2b22b34480a8dc3a82fe349, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Mesh4_Teapot_ModelMat
+    second: {fileID: 2100000, guid: d55292a6858b58d4cb425798e13f9841, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0
