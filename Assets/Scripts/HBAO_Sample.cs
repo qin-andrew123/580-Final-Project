@@ -25,6 +25,7 @@ public class HBAO_Sample : MonoBehaviour
     public float intensity;
 
     [Header("Sampling Settings")]
+    public int stepUpperBound;
     public bool regenerate;
 
     public static int sampleSize = 64;
@@ -48,6 +49,8 @@ public class HBAO_Sample : MonoBehaviour
 
         mat.SetInt("_SampleSize", sampleSize);
         mat.SetVectorArray("_Samples", samples);
+
+        mat.SetInt("_StepUpperBound", stepUpperBound);
     }
 
     private void CreateSamplesCircle() {

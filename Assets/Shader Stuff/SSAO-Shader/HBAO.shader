@@ -105,6 +105,9 @@ struct SurfaceDescriptionInputs
     float2 NDCPosition;
     float2 PixelPosition;
     
+    float3 ViewSpacePosition;
+    float3 WorldSpacePosition;
+    
     float3 ViewSpaceNormal;
     float3 WorldSpaceNormal;
 };
@@ -199,6 +202,7 @@ float3 _Samples[256];
 float _Radius;
 float _Intensity;
 int _ShowSSAO;
+int _StepUpperBound;
         // Graph Functions
         
 void Unity_SceneDepth_Raw_float(float4 UV, out float Out)
@@ -244,13 +248,28 @@ struct SurfaceDescription
     float Alpha;
 };     
 
+float3 TransformClipToView(float2 uv, float depth)
+{
+    float3 ret;
+    {
+                // Converting Position from Screen to View via world space
+        float3 world;
+        world = ComputeWorldSpacePosition(uv, depth, UNITY_MATRIX_I_VP);
+        ret = TransformWorldToView(world);
+    }
+    return ret;
+}
+
 SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
 {
     SurfaceDescription surface = (SurfaceDescription) 0;
     
     //generate scene color and depth
     float SceneDepth;
-    Unity_SceneDepth_Raw_float(float4(IN.NDCPosition.xy, 0, 0), SceneDepth);
+    Unity_SceneDepth_LinearEye_float(float4(IN.NDCPosition.xy, 0, 0), SceneDepth);
+    
+    float SceneDepthRaw;
+    Unity_SceneDepth_Raw_float(float4(IN.NDCPosition.xy, 0, 0), SceneDepthRaw);
    
     float4 SceneColorxyzw = Unity_Universal_SampleBuffer_BlitSource_float(float4(IN.NDCPosition.xy, 0, 0).xy);
     float3 SceneColor = SceneColorxyzw.xyz;
@@ -258,7 +277,7 @@ SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
     //we also need normal
     float3 NDCNormal = IN.ViewSpaceNormal;
     
-    float radius = _Radius * SceneDepth; 
+    float radius = _Radius ; 
     float radiusPixel = floor(radius * _ScreenParams.x);
     float2 InvRes = float2(1.0 / _ScreenParams.x, 1.0 / _ScreenParams.y);
     
@@ -275,7 +294,7 @@ SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
     
     //sample count for theta and stepcount
     int sampleCount = _SampleSize;
-    int stepCount = max(0, min(10, radiusPixel));
+    int stepCount = max(0, min(_StepUpperBound, radiusPixel));
     
     //stepSize
     float stepSizePixel = radiusPixel / (stepCount + 1);
@@ -284,7 +303,8 @@ SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
     float occlusion = 0;
     
     float t_theta = acos((normalize(NDCNormal)).z); //tagent angle, good
-    float3 P = float3(NDCPos, SceneDepth);//P as the point we are evaluating
+    float3 P = IN.ViewSpacePosition;
+    //float3(NDCPos, SceneDepth);//P as the point we are evaluating
     for (int i = 0; i < sampleCount; i++)
     {
         //for each sample, evaluate its location in NDC
@@ -302,15 +322,16 @@ SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
         for (int s = 1; s <= stepCount; s++)
         {
             float2 stepSample = NDCPos + s * directedStepSize;//a 2D stepping
-            
+            stepSample = saturate(stepSample);
             
             //obtain depth
             float stepDepth;
             Unity_SceneDepth_Raw_float(float4(stepSample.xy, 0, 0), stepDepth);
-            
             //construct 3D stepping point
             float3 Si = float3(stepSample, stepDepth);
-            float3 D = Si - P;//dir from sample(3D) to point
+            float3 Si_view = TransformClipToView(stepSample, stepDepth);
+            
+            float3 D = Si_view - P;//dir from sample(3D) to point
             float DLength = length(D);
             float alphaSi = atan(D.z / length(D.xy));//as in the paper, but no
             //negative z as we now has depth 1-0
@@ -334,8 +355,8 @@ SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
     
     if (isCenterDebug)
     {
-        surface.BaseColor = float3(1,0,0);
-        return surface;
+       // surface.BaseColor = float3(1,0,0);
+       // return surface;
     }
     
     if (_ShowSSAO == 1)
@@ -343,7 +364,8 @@ SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
     else if (_ShowSSAO == 2)
         surface.BaseColor *= (1 - occlusion);
     else if (_ShowSSAO == 3)
-        surface.BaseColor = t_theta;
+        surface.BaseColor = TransformClipToView(NDCPos, SceneDepth);//tranformation is good
+    //IN.ViewSpacePosition
         //need to tweak this later
    
     return surface;
@@ -373,6 +395,9 @@ SurfaceDescriptionInputs BuildSurfaceDescriptionInputs(Varyings input)
         
         
     output.NDCPosition = input.texCoord0.xy;
+    
+    output.ViewSpacePosition = TransformWorldToView(positionWS);
+    output.WorldSpacePosition = positionWS;
         
 #if defined(SHADER_STAGE_FRAGMENT) && defined(VARYINGS_NEED_CULLFACE)
 #define BUILD_SURFACE_DESCRIPTION_INPUTS_OUTPUT_FACESIGN output.FaceSign =                    IS_FRONT_VFACE(input.cullFace, true, false);
