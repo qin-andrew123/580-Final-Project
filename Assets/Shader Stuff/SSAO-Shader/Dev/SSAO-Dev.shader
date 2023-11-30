@@ -385,11 +385,7 @@ SurfaceDescription SimpleSSAO(SurfaceDescriptionInputs IN)
     surface.BaseColor = SceneColor;
     surface.Alpha = 1;
     
-    if (isCenterDebug)
-    {
-        surface.BaseColor = 1;
-        return  surface;
-    }
+    
     
     if (_ShowSSAO == 1)
         surface.BaseColor = (1 - occlusion); //need to tweak this later

@@ -436,7 +436,7 @@ SurfaceDescription DevSSAO(SurfaceDescriptionInputs IN)
     float3 ViewPos = float3(IN.ViewSpacePosition.xy, SceneDepth);
     
     int sampleCount = _SampleSize;
-    float radius = _Radius; //0.04;//need to tweak this later
+    float radius = _Radius;
     radius = radius; //* SceneDepthRaw;
     
     float resRatio = _ScreenParams.x / _ScreenParams.y;
@@ -456,40 +456,28 @@ SurfaceDescription DevSSAO(SurfaceDescriptionInputs IN)
     float3 debugColor = float3(1, 1, 1);
     for (int i = 0; i < sampleCount; i++)
     {
-        //for each sample, evaluate its location in NDC
-        float3 tagentSample = _Samples[i]; //simple sample, with positive z
+        //for each sample, evaluate its location
+        float3 tagentSample = _Samples[i]; //simple sample
         tagentSample = sign(dot(tagentSample, ViewNormal)) * tagentSample;
        
-        if (dot(tagentSample, ViewNormal) < 0)
-            tagentSample = -tagentSample;
-        
         float3 NDCSample = tagentSample * radius;
         float3 ViewSample = ViewPos + NDCSample;
         float3 NDCTest = TransformViewToClip(ViewSample);
-        
-        if (((NDCTest.x) <= sqrCenter.x + 0.01 && (NDCTest.x) >= sqrCenter.x - 0.01)
-            && ((NDCTest.y) <= sqrCenter.y + 0.01 && (NDCTest.y) >= sqrCenter.y - 0.01))
-            debugColor = float3(0, 1, 0);
-        
-        //rescale by screen ratio
-        //NDCSample.y = NDCSample.y * resRatio;
-        
-        float2 offsetUV = NDCTest.xy; //NDCSample.xy + NDCPos;
-        float offsetDepth = ViewSample.z; //- NDCSample.z + SceneDepth;
-        //offsetDepth = saturate(offsetDepth);
+      
+        float2 offsetUV = NDCTest.xy; 
+        float offsetDepth = ViewSample.z; 
         
         float actualDepth;
         Unity_SceneDepth_LinearEye_float(float4(offsetUV, 0, 0), actualDepth);
         
-        float bias = 0.1;
-        if (actualDepth < offsetDepth - bias )//nearest is 1, farest is 0
+        float bias = 0.2;
+        if (actualDepth < offsetDepth - bias )
         {
             float depthDiff = abs(SceneDepth - actualDepth);
             float rangeCheck = smoothstep(0.0, 1.0, radius / depthDiff);
             float weight = 1.0 / (1.0 + length(float3(NDCSample.xy, depthDiff))) * _Intensity;
             occlusion = occlusion + weight;
             
-            //debugColor = float3(1, 0, 1);
         }
     }
     occlusion = occlusion / ((float) sampleCount);
@@ -497,13 +485,6 @@ SurfaceDescription DevSSAO(SurfaceDescriptionInputs IN)
     
     surface.BaseColor = SceneColor;
     surface.Alpha = 1;
-    
-    
-    /*if (isCenterDebug)
-    {
-        surface.BaseColor = float3(1, 1,1 );
-        return surface;
-    }*/
     
     if (_ShowSSAO == 1)
         surface.BaseColor = (1 - occlusion) * debugColor; //need to tweak this later
