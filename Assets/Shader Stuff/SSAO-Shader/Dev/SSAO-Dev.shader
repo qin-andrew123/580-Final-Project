@@ -105,6 +105,7 @@ struct SurfaceDescriptionInputs
     float2 NDCPosition;
     float2 PixelPosition;
     float3 WorldSpacePosition;
+    float3 ViewSpacePosition;
     
     float3 ViewSpaceNormal;
     float3 WorldSpaceNormal;
@@ -370,7 +371,8 @@ SurfaceDescription SimpleSSAO(SurfaceDescriptionInputs IN)
         float actualDepth;
         Unity_SceneDepth_Raw_float(float4(offsetUV, 0, 0), actualDepth);
         
-        if (actualDepth > offsetDepth)//nearest is 1, farest is 0
+        float bias = 0.002;
+        if (actualDepth >= offsetDepth + bias)//nearest is 1, farest is 0
         {
             float depthDiff = abs(actualDepth - offsetDepth);
             float rangeCheck = smoothstep(0.0, 1.0, radius / depthDiff);
@@ -421,49 +423,60 @@ SurfaceDescription DevSSAO(SurfaceDescriptionInputs IN)
     SurfaceDescription surface = (SurfaceDescription) 0;
     
     float SceneDepth;
-    Unity_SceneDepth_Raw_float(float4(IN.NDCPosition.xy, 0, 0), SceneDepth);
+    Unity_SceneDepth_LinearEye_float(float4(IN.NDCPosition.xy, 0, 0), SceneDepth);
+    float SceneDepthRaw;
+    Unity_SceneDepth_Raw_float(float4(IN.NDCPosition.xy, 0, 0), SceneDepthRaw);
     
     float3 SceneColor = Unity_Universal_SampleBuffer_BlitSource_float(float4(IN.NDCPosition.xy, 0, 0).xy);
     
     float2 NDCPos = IN.NDCPosition.xy; //NDC xy ,[0,1]
     int sampleCount = _SampleSize;
     float radius = _Radius; //0.04;//need to tweak this later
-    radius = radius * SceneDepth;
+    radius = radius; //* SceneDepthRaw;
     
     float resRatio = _ScreenParams.x / _ScreenParams.y;
-    bool isCenterDebug = ((NDCPos.x) <= 0.5 + radius && (NDCPos.x) >= 0.5 - radius);
-    isCenterDebug = isCenterDebug && ((NDCPos.y) <= 0.5 + radius * resRatio && (NDCPos.y) >= 0.5 - radius * resRatio);
+    float2 sqrCenter = float2(0.5, 0.5);
+    bool isCenterDebug = ((NDCPos.x) <= sqrCenter.x + radius && 
+    (NDCPos.x) >= sqrCenter.x - radius);
+    
+    isCenterDebug = isCenterDebug && 
+    ((NDCPos.y) <= sqrCenter.y + radius * resRatio &&
+    (NDCPos.y) >= sqrCenter.y - radius * resRatio);
     
     float3 ViewNormal = normalize(IN.ViewSpaceNormal);
     float3 NDCNormal = normalFromDepth(SceneDepth, NDCPos);
   
     float occlusion = 0;
     float sampleSignCheck = 1;
+    
     for (int i = 0; i < sampleCount; i++)
     {
         //for each sample, evaluate its location in NDC
         float3 tagentSample = _Samples[i]; //simple sample, with positive z
-        
-        if (dot(tagentSample, NDCNormal) < 0)
+        tagentSample = sign(dot(tagentSample, ViewNormal)) * tagentSample;
+       
+        if (dot(tagentSample, ViewNormal) < 0)
             tagentSample = -tagentSample;
         
         float3 NDCSample = tagentSample * radius;
         //rescale by screen ratio
-        NDCSample.y = NDCSample.y * resRatio;
+        //NDCSample.y = NDCSample.y * resRatio;
         
         float2 offsetUV = NDCSample.xy + NDCPos;
         
-        float offsetDepth = NDCSample.z + SceneDepth;
-        offsetDepth = saturate(offsetDepth);
+        float offsetDepth =  - NDCSample.z + SceneDepth;
+        //offsetDepth = saturate(offsetDepth);
         
         float actualDepth;
-        Unity_SceneDepth_Raw_float(float4(offsetUV, 0, 0), actualDepth);
+        Unity_SceneDepth_LinearEye_float(float4(offsetUV, 0, 0), actualDepth);
         
-        if (actualDepth > offsetDepth)//nearest is 1, farest is 0
+        float bias = 0.04;
+        if (actualDepth < offsetDepth - bias)//nearest is 1, farest is 0
         {
-            float depthDiff = abs(actualDepth - offsetDepth);
+            float depthDiff = abs(SceneDepth - actualDepth);
             float rangeCheck = smoothstep(0.0, 1.0, radius / depthDiff);
-            occlusion = occlusion + rangeCheck * _Intensity;
+            float weight = 1.0 / (1.0 + length(float3(NDCSample.xy, depthDiff))) * _Intensity;
+            occlusion = occlusion + weight;
         }
     }
     occlusion = occlusion / ((float) sampleCount);
@@ -471,18 +484,19 @@ SurfaceDescription DevSSAO(SurfaceDescriptionInputs IN)
     surface.BaseColor = SceneColor;
     surface.Alpha = 1;
     
-    if (isCenterDebug)
+    float3 debugColor = float3(1, 1, 1);
+    /*if (isCenterDebug)
     {
-        surface.BaseColor = float3(1,0,0);
+        surface.BaseColor = float3(1, 1,1 );
         return surface;
-    }
+    }*/
     
     if (_ShowSSAO == 1)
-        surface.BaseColor = (1 - occlusion); //need to tweak this later
+        surface.BaseColor = (1 - occlusion) * debugColor; //need to tweak this later
     else if (_ShowSSAO == 2)
         surface.BaseColor *= (1 - occlusion);
     else if (_ShowSSAO == 3)
-        surface.BaseColor = NDCNormal;
+        surface.BaseColor = sampleSignCheck;
         //TransformTagentToView(float3(0, 2, 1), IN.WorldSpaceNormal);
     //NDCNormal;
         //mul(mat, float3(0,0,1));
@@ -523,6 +537,7 @@ SurfaceDescriptionInputs BuildSurfaceDescriptionInputs(Varyings input)
     float3 positionWS = viewDirWS * camearDistance + GetCameraPositionWS();
         
     output.WorldSpacePosition = positionWS;
+    output.ViewSpacePosition = TransformWorldToView(positionWS);
     output.NDCPosition = input.texCoord0.xy;
         
 #if defined(SHADER_STAGE_FRAGMENT) && defined(VARYINGS_NEED_CULLFACE)

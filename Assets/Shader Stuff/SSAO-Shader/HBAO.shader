@@ -1,4 +1,4 @@
-Shader"Unlit/SSAO"
+Shader"Unlit/HBAO"
 {
     Properties
     {
@@ -205,6 +205,12 @@ void Unity_SceneDepth_Raw_float(float4 UV, out float Out)
 {
     Out = SHADERGRAPH_SAMPLE_SCENE_DEPTH(UV.xy);
 }
+
+
+void Unity_SceneDepth_LinearEye_float(float4 UV, out float Out)
+{
+    Out = LinearEyeDepth(SHADERGRAPH_SAMPLE_SCENE_DEPTH(UV.xy), _ZBufferParams);
+}
         
 TEXTURE2D_X(_BlitTexture);
 float4 Unity_Universal_SampleBuffer_BlitSource_float(float2 uv)
@@ -243,71 +249,103 @@ SurfaceDescription SurfaceDescriptionFunction(SurfaceDescriptionInputs IN)
     SurfaceDescription surface = (SurfaceDescription) 0;
     
     //generate scene color and depth
-    float _SceneDepth_45b93924e263408b80908e216012afce_Out_1_Float;
-    Unity_SceneDepth_Raw_float(float4(IN.NDCPosition.xy, 0, 0), _SceneDepth_45b93924e263408b80908e216012afce_Out_1_Float);
-    float SceneDepth = (_SceneDepth_45b93924e263408b80908e216012afce_Out_1_Float.xxx);
-    float4 _URPSampleBuffer_24a2de1bebb142cfbe527f3ae742484b_Output_2_Vector4 = Unity_Universal_SampleBuffer_BlitSource_float(float4(IN.NDCPosition.xy, 0, 0).xy);
-    float3 SceneColor = (_URPSampleBuffer_24a2de1bebb142cfbe527f3ae742484b_Output_2_Vector4.xyz);
+    float SceneDepth;
+    Unity_SceneDepth_Raw_float(float4(IN.NDCPosition.xy, 0, 0), SceneDepth);
+   
+    float4 SceneColorxyzw = Unity_Universal_SampleBuffer_BlitSource_float(float4(IN.NDCPosition.xy, 0, 0).xy);
+    float3 SceneColor = SceneColorxyzw.xyz;
     float2 NDCPos = IN.NDCPosition.xy;//NDC xy
     //we also need normal
     float3 NDCNormal = IN.ViewSpaceNormal;
     
-    float radius = _Radius; 
+    float radius = _Radius * SceneDepth; 
     float radiusPixel = floor(radius * _ScreenParams.x);
     float2 InvRes = float2(1.0 / _ScreenParams.x, 1.0 / _ScreenParams.y);
     
+    //debug square
+    float resRatio = _ScreenParams.x / _ScreenParams.y;
+    float2 sqrCenter = float2(0.5, 0.5);
+    bool isCenterDebug = ((NDCPos.x) <= sqrCenter.x + radius &&
+    (NDCPos.x) >= sqrCenter.x - radius);
+    
+    isCenterDebug = isCenterDebug &&
+    ((NDCPos.y) <= sqrCenter.y + radius * resRatio &&
+    (NDCPos.y) >= sqrCenter.y - radius * resRatio);
+    
+    
     //sample count for theta and stepcount
     int sampleCount = _SampleSize;
-    int stepCount = min(4, radiusPixel);
+    int stepCount = max(0, min(10, radiusPixel));
     
     //stepSize
     float stepSizePixel = radiusPixel / (stepCount + 1);
-    float2 stepSize = stepSizePixel * InvRes;
+    float2 stepSize = stepSizePixel * InvRes;//should be good but we will see
     
     float occlusion = 0;
     
+    float t_theta = acos((normalize(NDCNormal)).z); //tagent angle, good
     float3 P = float3(NDCPos, SceneDepth);//P as the point we are evaluating
     for (int i = 0; i < sampleCount; i++)
     {
         //for each sample, evaluate its location in NDC
-        float2 thetaSample = _Samples[i].xy;//direction
-        float2 directedStepSize = thetaSample * stepSize;
+        float2 thetaSample = normalize(_Samples[i].xy); //direction, length 1
         
-        float t_theta = acos(normalize(NDCNormal).z); //tagent angle
-        float h_theta = t_theta;
+       // if (length(thetaSample) > 0.99)
+        //    t_theta = 0;//thetaSample's length is good
         
+        float2 directedStepSize = thetaSample * stepSize; //let's say its good
+        
+        float h_theta = t_theta;//good
+        
+        //stepping forward
+        float D = 0;
         for (int s = 1; s <= stepCount; s++)
         {
-            float2 stepSample = NDCPos + s * directedStepSize;
-            float stepDepth;
+            float2 stepSample = NDCPos + s * directedStepSize;//a 2D stepping
+            
             
             //obtain depth
+            float stepDepth;
             Unity_SceneDepth_Raw_float(float4(stepSample.xy, 0, 0), stepDepth);
-            float3 Si = float3(stepSample, stepDepth);
-            float3 D = Si - P;
-            float DLength = length(D);
             
-            float alphaSi = atan(-D.z / length(D.xy));//as in the paper
+            //construct 3D stepping point
+            float3 Si = float3(stepSample, stepDepth);
+            float3 D = Si - P;//dir from sample(3D) to point
+            float DLength = length(D);
+            float alphaSi = atan(D.z / length(D.xy));//as in the paper, but no
+            //negative z as we now has depth 1-0
             
             if (DLength < radius && alphaSi > h_theta)
             {
+                D = DLength;
                 h_theta = alphaSi;
                 
                 float omega_theta = max(0, (1 - (D * D) / (radius * radius)));
-                
                 occlusion += omega_theta * (sin(h_theta) - sin(t_theta));
             }
 
         }
-        
         //transform from tangent to NDC
     }
     occlusion = occlusion / ((float) sampleCount) * _Intensity;
     
     surface.BaseColor = SceneColor;
-    if (_ShowSSAO > 0)
-        surface.BaseColor = (1 - occlusion) ; //need to tweak this later
     surface.Alpha = 1;
+    
+    if (isCenterDebug)
+    {
+        surface.BaseColor = float3(1,0,0);
+        return surface;
+    }
+    
+    if (_ShowSSAO == 1)
+        surface.BaseColor = (1 - occlusion) ;
+    else if (_ShowSSAO == 2)
+        surface.BaseColor *= (1 - occlusion);
+    else if (_ShowSSAO == 3)
+        surface.BaseColor = t_theta;
+        //need to tweak this later
+   
     return surface;
 }
         
